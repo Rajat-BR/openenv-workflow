@@ -1,111 +1,99 @@
 """
-grader.py — Proportional partial-credit grader.
+grader.py — Workflow Grading System
+====================================
+Scoring breakdown (max 1.0):
+  0.6 × api_score   : F1 of precision & recall over correct APIs (deduped)
+  0.4 × order_score : 1.0 perfect order | 0.5 right APIs wrong order | 0.0 otherwise
 
-Scoring breakdown:
-  1. API Selection  (0.4) — correct_api_count / total_expected * 0.4
-  2. Order          (0.3) — correct_position_count / total_expected * 0.3
-  3. Parameters     (0.3) — correct_param_kv_matches / total_expected_params * 0.3
-
-Penalties (applied after, then clamp to [0.0, 1.0]):
-  - Invalid API (not in AVAILABLE_APIS): -0.2 each
-  - Extra API   (not in expected set):   -0.1 each
-  - Missing API: NOT penalized (already reflected in lower scores above)
+Penalties (subtracted before clamping):
+  -0.15 per unknown / non-string API token
+  -0.10 per valid-but-unnecessary API (correct vocab, but not in the required workflow)
+  -0.05 per duplicate valid API call
 """
 
-from typing import List, Dict
+VALID_APIS = {"email_api", "calendar_api", "flight_api"}
 
 
-def grade(workflow, task: Dict) -> float:
+def grade(correct: list, agent) -> float:
     """
-    Grade a submitted workflow against a task definition.
-    Always returns float in [0.0, 1.0]. Never raises.
+    Score an agent's proposed workflow against the correct workflow.
+
+    Parameters
+    ----------
+    correct : list  — ground-truth ordered list of API calls
+    agent   : any   — agent's proposed workflow (should be a list of strings)
+
+    Returns
+    -------
+    float in [0.0, 1.0]
     """
-    # ── Safe input handling ───────────────────────────────────────────────────
-    if not isinstance(workflow, list) or len(workflow) == 0:
+
+    # ── 1. Format validation ────────────────────────────────────────────────
+    if not isinstance(agent, list) or len(agent) == 0:
         return 0.0
 
-    expected: List[Dict] = task.get("expected_workflow", [])
-    if not expected:
-        return 0.0
+    # ── 2. Classify every token in the agent's response ─────────────────────
+    valid_agent   = []   # valid API strings, in submission order
+    invalid_count = 0    # unknown / non-string tokens
+    duplicate_count = 0  # repeated valid API calls
 
-    from apis import AVAILABLE_APIS
-    known_apis = set(AVAILABLE_APIS)
+    seen_valid = []      # tracks duplicates while preserving order
 
-    # Normalise submitted steps — skip anything not a dict
-    submitted: List[Dict] = []
-    for step in workflow:
-        if isinstance(step, dict) and isinstance(step.get("api"), str):
-            submitted.append(step)
+    for token in agent:
+        if not isinstance(token, str) or token not in VALID_APIS:
+            # Garbage token: not a string, or unrecognised API name
+            invalid_count += 1
+        elif token in seen_valid:
+            # Valid API name, but already used — duplicate
+            duplicate_count += 1
+            valid_agent.append(token)   # still include for order scoring
+        else:
+            seen_valid.append(token)
+            valid_agent.append(token)
 
-    if not submitted:
-        return 0.0
+    # Deduplicated list (preserves first-occurrence order)
+    deduped_agent = list(dict.fromkeys(valid_agent))
 
-    expected_apis = [s["api"] for s in expected]
-    submitted_apis = [s["api"] for s in submitted]
-    expected_set = set(expected_apis)
-    total_expected = len(expected_apis)
+    # ── 3. Early exit — no valid APIs at all ────────────────────────────────
+    if not deduped_agent:
+        # Agent produced zero recognisable APIs; apply garbage penalty and return
+        garbage_penalty = min(0.15 * invalid_count, 1.0)
+        return 0.0   # penalty cannot raise score above 0
 
-    # ── 1. API Selection Score (0.4) ─────────────────────────────────────────
-    # How many expected APIs appear at least once in the submission
-    correct_api_count = sum(1 for api in expected_apis if api in set(submitted_apis))
-    score_api = (correct_api_count / total_expected) * 0.4
+    # ── 4. API coverage score (Precision × Recall → F1) ─────────────────────
+    correct_set      = set(correct)
+    deduped_set      = set(deduped_agent)
 
-    # ── 2. Order Score (0.3) ─────────────────────────────────────────────────
-    # How many APIs are at the correct index position
-    correct_position_count = 0
-    for i, expected_api in enumerate(expected_apis):
-        if i < len(submitted_apis) and submitted_apis[i] == expected_api:
-            correct_position_count += 1
-    score_order = (correct_position_count / total_expected) * 0.3
+    true_positives   = len(deduped_set & correct_set)          # hits
+    false_positives  = len(deduped_set - correct_set)          # valid but unneeded
+    false_negatives  = len(correct_set - deduped_set)          # required but missing
 
-    # ── 3. Parameter Score (0.3) ─────────────────────────────────────────────
-    # For each expected step, find its match in submitted, compare key-value pairs
-    total_expected_params = sum(len(s.get("params", {})) for s in expected)
-    correct_param_matches = 0
+    precision = true_positives / len(deduped_set)  if deduped_set  else 0.0
+    recall    = true_positives / len(correct_set)  if correct_set  else 0.0
 
-    if total_expected_params > 0:
-        # Build lookup: api_name → list of submitted param dicts for that api
-        submitted_params_map: Dict[str, List[Dict]] = {}
-        for step in submitted:
-            api_name = step["api"]
-            params = step.get("params", {})
-            if not isinstance(params, dict):
-                params = {}
-            submitted_params_map.setdefault(api_name, []).append(params)
-
-        used_indices: Dict[str, int] = {}  # track which call index we've consumed per api
-
-        for exp_step in expected:
-            api_name = exp_step["api"]
-            exp_params = exp_step.get("params", {})
-            if not isinstance(exp_params, dict):
-                continue
-
-            calls = submitted_params_map.get(api_name, [])
-            idx = used_indices.get(api_name, 0)
-            if idx >= len(calls):
-                continue  # no submitted call for this api
-
-            sub_params = calls[idx]
-            used_indices[api_name] = idx + 1
-
-            # Count matching key-value pairs
-            for key, expected_val in exp_params.items():
-                if key in sub_params and sub_params[key] == expected_val:
-                    correct_param_matches += 1
-
-        score_params = (correct_param_matches / total_expected_params) * 0.3
+    if precision + recall > 0:
+        api_score = (2 * precision * recall) / (precision + recall)   # F1
     else:
-        score_params = 0.3  # no params required → full param credit
+        api_score = 0.0
 
-    raw_score = score_api + score_order + score_params
+    # ── 5. Order score ───────────────────────────────────────────────────────
+    if deduped_agent == correct:
+        order_score = 1.0                          # perfect: exact APIs, exact order
+    elif deduped_set == correct_set:
+        order_score = 0.5                          # all required APIs present, wrong order
+    elif true_positives > 0:
+        order_score = 0.1 * (true_positives / len(correct))  # partial credit
+    else:
+        order_score = 0.0                          # nothing useful
 
-    # ── Penalties ─────────────────────────────────────────────────────────────
-    # Invalid APIs (not in registry at all)
-    invalid_penalty = sum(0.2 for api in submitted_apis if api not in known_apis)
+    # ── 6. Penalties ─────────────────────────────────────────────────────────
+    invalid_penalty   = 0.15 * invalid_count        # garbage / unknown tokens
+    extra_api_penalty = 0.10 * false_positives      # valid but unnecessary APIs
+    duplicate_penalty = 0.05 * duplicate_count      # repeated valid API calls
 
-    # Extra APIs (not in the expected set for this task)
-    extra_penalty = sum(0.1 for api in submitted_apis if api not in expected_set)
+    total_penalty = invalid_penalty + extra_api_penalty + duplicate_penalty
 
-    final_score = raw_score - invalid_penalty - extra_penalty
-    return round(max(0.0, min(1.0, final_score)), 4)
+    # ── 7. Compose final score ───────────────────────────────────────────────
+    score = (0.6 * api_score) + (0.4 * order_score) - total_penalty
+    score = round(max(0.0, min(1.0, score)), 4)
+    return score
