@@ -33,7 +33,7 @@ MODEL_NAME   = os.getenv("MODEL_NAME")
 
 MAX_TOKENS  = 512
 TEMPERATURE = 0.0       # deterministic — same input → same output
-DEBUG       = True
+DEBUG       = False
 
 FALLBACK_WORKFLOW: List[Dict] = []   # returned on unrecoverable parse failure
 
@@ -50,15 +50,10 @@ SYSTEM_PROMPT = textwrap.dedent("""
     into an ordered list of API calls that fulfils the request completely.
 
     Available APIs and their required parameters:
-      weather_api(city)
-      flight_api(from_city, to_city, passenger)
-      hotel_api(hotel, guest, city)
-      calendar_api(title, time)
-      crm_api(name, company, email)
-      invoice_api(amount, client)
-      payment_api(amount)
-      email_api(to, subject, body)
-      notification_api(channel, message)
+      flight_api(from_city, to_city)
+      calendar_api(date, time)
+      email_api(to)
+      database_api(data)
 
     Rules:
     - Respond with ONLY a valid JSON array of objects.
@@ -67,10 +62,18 @@ SYSTEM_PROMPT = textwrap.dedent("""
     - Order matters: respect logical dependencies
       (e.g. flight must be booked before emailing confirmation).
     - Do NOT include markdown fences, explanations, or any other text.
+    - For database_api, the data object MUST include:
+        * destination
+        * date
+        * time
 
     Example:
-    [{"api": "flight_api", "params": {"from_city": "NYC", "to_city": "London", "passenger": "Alice"}},
-     {"api": "email_api",  "params": {"to": "alice@x.com", "subject": "Booked", "body": "Done"}}]
+    [
+        {"api": "flight_api", "params": {"from_city": "NYC", "to_city": "Paris"}},
+        {"api": "calendar_api", "params": {"date": "2026-05-01", "time": "10:00"}},
+        {"api": "database_api", "params": {"data": {"destination": "Paris", "date": "2026-05-01", "time": "10:00"}}},
+        {"api": "email_api", "params": {"to": "alice@x.com"}}
+    ]
 """).strip()
 
 
@@ -180,17 +183,23 @@ def llm_agent(task: Dict, history: List[str]) -> Action:
 
 RULE_BASED_WORKFLOWS: Dict[str, List[Dict]] = {
     "easy": [
-        {"api": "weather_api", "params": {"city": "Paris"}},
+        {"api": "calendar_api", "params": {"date": "2026-04-08", "time": "10:00"}},
     ],
     "medium": [
-        {"api": "flight_api",   "params": {"from_city": "New York", "to_city": "London"}},
-        {"api": "email_api",    "params": {"to": "john@example.com", "subject": "Flight Confirmation"}},
+        {"api": "flight_api", "params": {"from_city": "New York", "to_city": "London"}},
+        {"api": "email_api",  "params": {"to": "john@example.com"}},
     ],
     "hard": [
-        {"api": "flight_api",   "params": {"from_city": "NYC", "to_city": "Paris"}},
-        {"api": "calendar_api", "params": {"date": "2024-12-01", "time": "10:00"}},
-        {"api": "database_api", "params": {"data": {"trip": "Paris", "meeting": "10am"}}},
-        {"api": "email_api",    "params": {"to": "alice@company.com", "subject": "Trip Plan"}},
+        {"api": "flight_api", "params": {"from_city": "NYC", "to_city": "Paris"}},
+        {"api": "calendar_api", "params": {"date": "2026-05-01", "time": "10:00"}},
+        {"api": "database_api", "params": {
+            "data": {
+                "destination": "Paris",
+                "date": "2026-05-01",
+                "time": "10:00"
+            }
+        }},
+        {"api": "email_api", "params": {"to": "alice@company.com"}},
     ],
 }
 

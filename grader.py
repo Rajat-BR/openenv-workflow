@@ -1,111 +1,182 @@
-"""
-grader.py — Proportional partial-credit grader.
-
-Scoring breakdown:
-  1. API Selection  (0.4) — correct_api_count / total_expected * 0.4
-  2. Order          (0.3) — correct_position_count / total_expected * 0.3
-  3. Parameters     (0.3) — correct_param_kv_matches / total_expected_params * 0.3
-
-Penalties (applied after, then clamp to [0.0, 1.0]):
-  - Invalid API (not in AVAILABLE_APIS): -0.2 each
-  - Extra API   (not in expected set):   -0.1 each
-  - Missing API: NOT penalized (already reflected in lower scores above)
-"""
-
-from typing import List, Dict
+from typing import List, Dict, Tuple, Optional
 
 
-def grade(workflow, task: Dict) -> float:
+def _normalise(token: str) -> str:
+    return token.strip().lower()
+
+
+def _lcs_length(a: List[str], b: List[str]) -> int:
+    m, n = len(a), len(b)
+    prev = [0] * (n + 1)
+    curr = [0] * (n + 1)
+    for i in range(1, m + 1):
+        for j in range(1, n + 1):
+            curr[j] = (
+                prev[j - 1] + 1 if a[i - 1] == b[j - 1]
+                else max(prev[j], curr[j - 1])
+            )
+        prev, curr = curr, [0] * (n + 1)
+    return prev[n]
+
+
+def _dep_satisfaction(agent_seq: List[str], dependencies: List[Tuple[str, str]]) -> float:
+    if not dependencies:
+        return 1.0
+    pos = {api: i for i, api in enumerate(agent_seq)}
+    satisfied = sum(
+        1 for a, b in dependencies
+        if a not in pos or b not in pos or pos[a] < pos[b]
+    )
+    return satisfied / len(dependencies)
+
+
+def _param_score(submitted: List[Dict], expected: List[Dict]) -> float:
+    total_expected_kv = sum(len(s.get("params", {})) for s in expected)
+    if total_expected_kv == 0:
+        return 1.0
+
+    sub_params_map: Dict[str, List[Dict]] = {}
+    for step in submitted:
+        raw_name = step.get("api", "")
+        if not isinstance(raw_name, str):
+            continue
+        norm_name = _normalise(raw_name)
+        params = step.get("params", {})
+        if not isinstance(params, dict):
+            params = {}
+        sub_params_map.setdefault(norm_name, []).append(params)
+
+    used: Dict[str, int] = {}
+    correct_kv = 0
+
+    for exp_step in expected:
+        exp_api = _normalise(exp_step["api"])
+        exp_params = exp_step.get("params", {})
+
+        calls = sub_params_map.get(exp_api, [])
+        idx = used.get(exp_api, 0)
+        if idx >= len(calls):
+            continue
+
+        sub_p = calls[idx]
+        used[exp_api] = idx + 1
+
+        for key, expected_val in exp_params.items():
+            if key in sub_p and sub_p[key] == expected_val:
+                correct_kv += 1
+
+    return correct_kv / total_expected_kv
+
+
+# ── FIXED FUNCTION ────────────────────────────────────────────────────────────
+
+def grade(correct: List[Dict], workflow: List[Dict], dependencies: Optional[List[Tuple[str, str]]] = None) -> float:
     """
-    Grade a submitted workflow against a task definition.
-    Always returns float in [0.0, 1.0]. Never raises.
+    FIXED: Now takes (correct_workflow, agent_workflow)
     """
-    # ── Safe input handling ───────────────────────────────────────────────────
+
+    # ✅ FIX 1: remove task dependency
+    expected: List[Dict] = correct
+
+    # ✅ FIX 2: remove task-based dependencies
+    if dependencies is None:
+        dependencies = []
+
+    # ── 1. Validate input ─────────────────────────────────────
     if not isinstance(workflow, list) or len(workflow) == 0:
         return 0.0
-
-    expected: List[Dict] = task.get("expected_workflow", [])
     if not expected:
         return 0.0
 
     from apis import AVAILABLE_APIS
     known_apis = set(AVAILABLE_APIS)
+    correct_apis = [_normalise(s["api"]) for s in expected]
+    correct_set = set(correct_apis)
 
-    # Normalise submitted steps — skip anything not a dict
-    submitted: List[Dict] = []
+    valid_agent = []
+    invalid_count = 0
+    duplicate_count = 0
+    seen_valid = []
+
+    valid_submitted_steps = []
+
     for step in workflow:
-        if isinstance(step, dict) and isinstance(step.get("api"), str):
-            submitted.append(step)
+        if not isinstance(step, dict):
+            invalid_count += 1
+            continue
 
-    if not submitted:
+        raw_name = step.get("api", "")
+        if not isinstance(raw_name, str):
+            invalid_count += 1
+            continue
+
+        norm = _normalise(raw_name)
+
+        if norm not in known_apis:
+            invalid_count += 1
+        elif norm in seen_valid:
+            duplicate_count += 1
+            valid_agent.append(norm)
+            valid_submitted_steps.append(step)
+        else:
+            seen_valid.append(norm)
+            valid_agent.append(norm)
+            valid_submitted_steps.append(step)
+
+    deduped_agent = list(dict.fromkeys(valid_agent))
+
+    if not deduped_agent:
         return 0.0
 
-    expected_apis = [s["api"] for s in expected]
-    submitted_apis = [s["api"] for s in submitted]
-    expected_set = set(expected_apis)
-    total_expected = len(expected_apis)
+    deduped_set = set(deduped_agent)
+    true_positives = len(deduped_set & correct_set)
 
-    # ── 1. API Selection Score (0.4) ─────────────────────────────────────────
-    # How many expected APIs appear at least once in the submission
-    correct_api_count = sum(1 for api in expected_apis if api in set(submitted_apis))
-    score_api = (correct_api_count / total_expected) * 0.4
+    if true_positives == 0:
+        return 0.0
 
-    # ── 2. Order Score (0.3) ─────────────────────────────────────────────────
-    # How many APIs are at the correct index position
-    correct_position_count = 0
-    for i, expected_api in enumerate(expected_apis):
-        if i < len(submitted_apis) and submitted_apis[i] == expected_api:
-            correct_position_count += 1
-    score_order = (correct_position_count / total_expected) * 0.3
+    # ── API score ─────────────────────────────────────────────
+    false_positives = len(deduped_set - correct_set)
 
-    # ── 3. Parameter Score (0.3) ─────────────────────────────────────────────
-    # For each expected step, find its match in submitted, compare key-value pairs
-    total_expected_params = sum(len(s.get("params", {})) for s in expected)
-    correct_param_matches = 0
+    precision = true_positives / len(deduped_set)
+    recall = true_positives / len(correct_set)
 
-    if total_expected_params > 0:
-        # Build lookup: api_name → list of submitted param dicts for that api
-        submitted_params_map: Dict[str, List[Dict]] = {}
-        for step in submitted:
-            api_name = step["api"]
-            params = step.get("params", {})
-            if not isinstance(params, dict):
-                params = {}
-            submitted_params_map.setdefault(api_name, []).append(params)
+    api_score = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
 
-        used_indices: Dict[str, int] = {}  # track which call index we've consumed per api
-
-        for exp_step in expected:
-            api_name = exp_step["api"]
-            exp_params = exp_step.get("params", {})
-            if not isinstance(exp_params, dict):
-                continue
-
-            calls = submitted_params_map.get(api_name, [])
-            idx = used_indices.get(api_name, 0)
-            if idx >= len(calls):
-                continue  # no submitted call for this api
-
-            sub_params = calls[idx]
-            used_indices[api_name] = idx + 1
-
-            # Count matching key-value pairs
-            for key, expected_val in exp_params.items():
-                if key in sub_params and sub_params[key] == expected_val:
-                    correct_param_matches += 1
-
-        score_params = (correct_param_matches / total_expected_params) * 0.3
+    # ── Order score ───────────────────────────────────────────
+    if deduped_agent == correct_apis:
+        order_score = 1.0
+    elif deduped_set == correct_set:
+        dep_sat = _dep_satisfaction(deduped_agent, dependencies)
+        order_score = 0.9 * (0.7 + 0.3 * dep_sat)
     else:
-        score_params = 0.3  # no params required → full param credit
+        agent_hits = [t for t in deduped_agent if t in correct_set]
+        lcs = _lcs_length(agent_hits, correct_apis)
+        lcs_ratio = lcs / len(correct_apis)
+        dep_sat = _dep_satisfaction(deduped_agent, dependencies)
+        order_score = 0.85 * (0.7 * lcs_ratio + 0.3 * dep_sat)
 
-    raw_score = score_api + score_order + score_params
+    # ── Efficiency ────────────────────────────────────────────
+    n_correct = len(correct_apis)
+    n_agent = len(deduped_agent)
+    efficiency_score = n_correct / max(n_correct, n_agent)
 
-    # ── Penalties ─────────────────────────────────────────────────────────────
-    # Invalid APIs (not in registry at all)
-    invalid_penalty = sum(0.2 for api in submitted_apis if api not in known_apis)
+    # ── Params ────────────────────────────────────────────────
+    score_params = _param_score(valid_submitted_steps, expected)
 
-    # Extra APIs (not in the expected set for this task)
-    extra_penalty = sum(0.1 for api in submitted_apis if api not in expected_set)
+    # ── Penalties ─────────────────────────────────────────────
+    invalid_penalty = 0.08 * invalid_count
+    extra_api_penalty = 0.05 * false_positives
+    duplicate_penalty = 0.03 * duplicate_count
 
-    final_score = raw_score - invalid_penalty - extra_penalty
-    return round(max(0.0, min(1.0, final_score)), 4)
+    total_penalty = invalid_penalty + extra_api_penalty + duplicate_penalty
+
+    # ── Final ────────────────────────────────────────────────
+    score = (
+        0.40 * api_score +
+        0.30 * order_score +
+        0.20 * efficiency_score +
+        0.10 * score_params -
+        total_penalty
+    )
+
+    return round(max(0.0, min(1.0, score)), 4)

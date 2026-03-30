@@ -1,7 +1,7 @@
 """
-apis.py — Exactly 5 simulated APIs.
+apis.py — Exactly 4 simulated APIs.
 Each takes (params: dict, state: dict) -> dict.
-No real API calls. No randomness. Fully deterministic.
+
 """
 
 from typing import Dict
@@ -12,21 +12,6 @@ def _ok(data: Dict) -> Dict:
 
 def _fail(reason: str) -> Dict:
     return {"status": "error", "reason": reason}
-
-
-def weather_api(params: Dict, state: Dict) -> Dict:
-    city = params.get("city", "")
-    if not city or not isinstance(city, str):
-        return _fail("Missing or invalid 'city' parameter")
-    weather_map = {
-        "paris":    {"condition": "Sunny",  "temp_c": 18, "humidity": 60},
-        "london":   {"condition": "Rainy",  "temp_c": 11, "humidity": 85},
-        "new york": {"condition": "Cloudy", "temp_c": 15, "humidity": 72},
-        "tokyo":    {"condition": "Clear",  "temp_c": 22, "humidity": 55},
-        "nyc":      {"condition": "Cloudy", "temp_c": 15, "humidity": 72},
-    }
-    weather = weather_map.get(city.lower(), {"condition": "Clear", "temp_c": 20, "humidity": 65})
-    return _ok({"city": city, **weather})
 
 
 def flight_api(params: Dict, state: Dict) -> Dict:
@@ -40,7 +25,7 @@ def flight_api(params: Dict, state: Dict) -> Dict:
         return _fail("'from_city' and 'to_city' cannot be the same")
     booking_id = f"FL-{abs(hash(from_city + to_city)) % 9000 + 1000}"
     state["flight_booked"] = True
-    return _ok({"booking_id": booking_id, "from": from_city, "to": to_city})
+    return _ok({"booking_id": booking_id, "from_city": from_city, "to_city": to_city})
 
 
 def calendar_api(params: Dict, state: Dict) -> Dict:
@@ -56,17 +41,16 @@ def calendar_api(params: Dict, state: Dict) -> Dict:
 
 
 def email_api(params: Dict, state: Dict) -> Dict:
-    to      = params.get("to", "")
-    subject = params.get("subject", "")
+    to = params.get("to", "")
     if not to or not isinstance(to, str):
         return _fail("Missing 'to'")
-    if not subject or not isinstance(subject, str):
-        return _fail("Missing 'subject'")
+
     if len(state.get("history", [])) == 0:
         return _fail("Cannot send email as the very first action")
-    msg_id = f"EM-{abs(hash(to + subject)) % 9000 + 1000}"
+
+    msg_id = f"EM-{abs(hash(to)) % 9000 + 1000}"
     state["email_sent"] = True
-    return _ok({"message_id": msg_id, "to": to, "subject": subject})
+    return _ok({"message_id": msg_id, "to": to})
 
 
 def database_api(params: Dict, state: Dict) -> Dict:
@@ -75,12 +59,19 @@ def database_api(params: Dict, state: Dict) -> Dict:
         return _fail("Missing 'data'")
     if not isinstance(data, dict):
         return _fail("'data' must be a dict")
+    required_keys = ["destination", "date", "time"]
+    for key in required_keys:
+        if key not in data:
+            return _fail(f"Missing '{key}' in data")
+
     state["data_stored"] = True
-    return _ok({"stored": True, "keys": list(data.keys())})
+    return _ok({
+        "stored": True,
+        "data": data
+    })
 
 
 API_REGISTRY = {
-    "weather_api":  weather_api,
     "flight_api":   flight_api,
     "calendar_api": calendar_api,
     "email_api":    email_api,

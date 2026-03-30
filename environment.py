@@ -41,12 +41,9 @@ def _fresh_state() -> Dict[str, Any]:
     """Return a clean state dict for a new episode."""
     return {
         "flight_booked":       False,
-        "hotel_booked":        False,
         "meeting_scheduled":   False,
-        "crm_contact_created": False,
-        "invoice_created":     False,
-        "payment_processed":   False,
         "email_sent":          False,
+        "data_stored":         False,
         "history": [],
     }
 
@@ -96,9 +93,6 @@ class APIWorkflowEnv:
             )
             return obs, Reward(score=0.0), True, {"info": "already_done"}
 
-        from pydantic import ValidationError
-
-        from pydantic import ValidationError
 
         # Handle invalid input safely
         if not isinstance(action, Action):
@@ -138,7 +132,7 @@ class APIWorkflowEnv:
             api_results.append({"api": api_name, "result": result})
             self._env_state["history"].append({"api": api_name, "params": params, "result": result})
 
-        score = grade(raw_workflow, current_task)
+        score = grade(current_task["expected_workflow"], raw_workflow)
         self._last_score = score
         self._step_count += 1
 
@@ -176,12 +170,9 @@ class APIWorkflowEnv:
             "last_score":          self._last_score,
             "available_apis":      AVAILABLE_APIS,
             "flight_booked":       self._env_state["flight_booked"],
-            "hotel_booked":        self._env_state["hotel_booked"],
             "meeting_scheduled":   self._env_state["meeting_scheduled"],
-            "crm_contact_created": self._env_state["crm_contact_created"],
-            "invoice_created":     self._env_state["invoice_created"],
-            "payment_processed":   self._env_state["payment_processed"],
             "email_sent":          self._env_state["email_sent"],
+            "data_stored":         self._env_state["data_stored"],
             "history_length":      len(self._env_state["history"]),
         }
 
