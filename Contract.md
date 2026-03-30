@@ -10,7 +10,6 @@ All team members MUST follow this.
 
 Only these APIs are allowed:
 
-- weather_api
 - flight_api
 - calendar_api
 - email_api
@@ -21,9 +20,6 @@ Only these APIs are allowed:
 ## 📥 API Parameters (STRICT)
 
 Each API must receive EXACT parameters:
-
-- weather_api:
-  - city (str)
 
 - flight_api:
   - from_city (str)
