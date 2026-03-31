@@ -51,6 +51,15 @@ Keeping the API set minimal ensures that performance reflects reasoning and plan
 
 ## Running the project
 
+### Local (quick run)
+
 ```bash
 pip install -r requirements.txt
 python inference.py
+```
+
+### Docker (recommended for evaluation)
+
+```bash
+docker build -t flowforge .
+docker run flowforge
