@@ -133,6 +133,14 @@ class APIWorkflowEnv:
             self._env_state["history"].append({"api": api_name, "params": params, "result": result})
 
         score = grade(current_task["expected_workflow"], raw_workflow)
+
+        # count failed API calls
+        failed_calls = sum(1 for r in api_results if r["result"]["status"] == "error")
+
+        # apply penalty
+        score -= 0.2 * failed_calls
+        score = min(1.0, max(0.0, score))
+
         self._last_score = score
         self._step_count += 1
 
@@ -191,3 +199,4 @@ class APIWorkflowEnv:
             available_apis=AVAILABLE_APIS,
             step_count=self._step_count,
         )
+
