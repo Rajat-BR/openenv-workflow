@@ -33,7 +33,7 @@ Each API must receive EXACT parameters:
   - to (str)
 
 - database_api:
-  - data (str)
+  - data (data: dict)
 
 ---
 
