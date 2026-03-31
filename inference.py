@@ -219,6 +219,7 @@ def main() -> List[float]:
     print(f"MODEL_NAME   : {MODEL_NAME or '(not set — rule-based fallback)'}")
     print(f"TEMPERATURE  : {TEMPERATURE}")
     print(f"MAX_TOKENS   : {MAX_TOKENS}")
+    print(f"Using fallback: {not MODEL_NAME}")
     print()
 
     env = APIWorkflowEnv()
