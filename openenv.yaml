@@ -2,23 +2,23 @@ name: api-workflow-orchestration
 version: "1.0.0"
 description: >
   A real-world OpenEnv environment where an agent must orchestrate API calls
-  to complete business workflows (weather lookup, flight booking, full travel
-  planning with invoicing). The agent must choose the correct APIs, call them
-  in the correct order, and supply correct parameters.
+  to complete business workflows (meeting scheduling, flight booking,
+  and multi-step trip planning). The agent must choose correct APIs,
+  order them properly, and supply correct parameters.
 
 environment:
   class: APIWorkflowEnv
   module: environment
 
 modules:
-  - environment.py   # OpenEnv interface + Pydantic models
-  - apis.py          # Simulated API implementations
-  - grader.py        # Deterministic partial-credit grader
-  - tasks.py         # 3 task definitions (easy / medium / hard)
+  - environment.py
+  - apis.py
+  - grader.py
+  - tasks.py
 
 action_space:
   type: structured
-  description: A workflow is an ordered list of API call objects.
+  description: Ordered list of API calls
   schema:
     workflow:
       type: array
@@ -29,82 +29,65 @@ action_space:
           api:
             type: string
             enum:
-              - weather_api
               - flight_api
-              - hotel_api
               - calendar_api
-              - crm_api
-              - invoice_api
-              - payment_api
               - email_api
-              - notification_api
+              - database_api
           params:
             type: object
-            description: Key-value parameters for the API call
 
 observation_space:
   type: structured
   schema:
     message:
       type: string
-      description: Current task status and difficulty label
     task_description:
       type: string
-      description: Natural-language user request the agent must fulfill
     available_apis:
       type: array
       items:
         type: string
-      description: Full list of callable API names
     step_count:
       type: integer
-      description: Number of tasks completed so far
 
 reward:
   type: float
   range: [0.0, 1.0]
   description: >
-    Partial-credit score per task:
-      API correctness  (0.40) — proportion of required APIs present
-      Order correctness (0.30) — LCS ratio vs expected sequence
-      Param correctness (0.30) — required parameter keys present
-    Penalties:
-      Unknown API       -0.10 each (max -0.20)
-      Extra API calls   -0.05 each (max -0.15)
-    Final score clamped to [0.0, 1.0].
+    Continuous score combining:
+      - API correctness (F1)
+      - Order correctness (LCS + dependency)
+      - Efficiency (minimal steps)
+      - Parameter correctness
+    Execution failures incur additional penalty.
 
 state:
-  description: Internal flags updated after each API execution.
+  description: Internal execution state
   fields:
-    flight_booked:       bool
-    hotel_booked:        bool
-    meeting_scheduled:   bool
-    crm_contact_created: bool
-    invoice_created:     bool
-    payment_processed:   bool
-    email_sent:          bool
-    history:             list  # full execution log
+    flight_booked: bool
+    meeting_scheduled: bool
+    email_sent: bool
+    data_stored: bool
+    history: list
 
 tasks:
   - id: easy
     difficulty: easy
     steps: 1
-    description: Check weather for a city (single API, no dependencies)
-    apis: [weather_api]
+    description: Schedule a meeting
+    apis: [calendar_api]
 
   - id: medium
     difficulty: medium
     steps: 2
-    description: Book a flight then email the confirmation (ordered dependency)
+    description: Book a flight and send confirmation email
     apis: [flight_api, email_api]
 
   - id: hard
     difficulty: hard
-    steps: 6
-    description: >
-      Full business travel workflow — flight, hotel, calendar, invoice,
-      payment, email — with strict ordering dependencies throughout.
-    apis: [flight_api, hotel_api, calendar_api, invoice_api, payment_api, email_api]
+    steps: 4
+    description: Multi-step workflow (flight → calendar → database → email)
+    apis: [flight_api, calendar_api, database_api, email_api]
 
 episode:
   num_tasks: 3
@@ -112,14 +95,12 @@ episode:
   reset_on_done: true
 
 baseline_scores:
-  easy:   1.0
-  medium: 1.0
-  hard:   1.0
-  average: 1.0
+  note: >
+    Deterministic rule-based fallback achieves perfect scores.
+    Actual LLM performance may vary.
 
 tags:
   - openenv
   - api-orchestration
   - workflow
-  - business-tasks
   - deterministic
