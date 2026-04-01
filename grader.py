@@ -158,7 +158,7 @@ def grade(correct: List[Dict], workflow: List[Dict], dependencies: Optional[List
     # ── Efficiency ────────────────────────────────────────────
     n_correct = len(correct_apis)
     n_agent = len(deduped_agent)
-    efficiency_score = n_correct / max(n_correct, n_agent)
+    efficiency_score = true_positives / n_correct
 
     # ── Params ────────────────────────────────────────────────
     score_params = _param_score(valid_submitted_steps, expected)
