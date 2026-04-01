@@ -44,7 +44,7 @@ Keeping the API set minimal ensures that performance reflects reasoning and plan
 - **Hard**: Full workflow (flight → calendar → database → email)
 
 ## How it works
-1. The agent generates a JSON workflow
+1. An agent generates a JSON workflow
 2. The environment executes each API step
 3. The grader assigns a score (0.0–1.0)
 4. Scores are aggregated across tasks
