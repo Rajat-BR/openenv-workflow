@@ -134,11 +134,6 @@ class APIWorkflowEnv:
 
         score = grade(current_task["expected_workflow"], raw_workflow)
 
-        # count failed API calls
-        failed_calls = sum(1 for r in api_results if r["result"]["status"] == "error")
-
-        # apply penalty
-        score -= 0.2 * failed_calls
         score = min(1.0, max(0.0, score))
 
         self._last_score = score

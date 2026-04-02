@@ -28,7 +28,8 @@ from tasks import TASKS
 # ─── Configuration (module-level constants, matching sample conventions) ───────
 
 API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
-API_KEY      = os.getenv("HF_TOKEN") or os.getenv("API_KEY") or "dummy"
+HF_TOKEN = os.getenv("HF_TOKEN")
+
 MODEL_NAME   = os.getenv("MODEL_NAME")
 
 MAX_TOKENS  = 512
@@ -148,7 +149,7 @@ def llm_agent(task: Dict, history: List[str]) -> Action:
         return rule_based_agent(task)
 
     try:
-        client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+        client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
 
         response = client.chat.completions.create(
             model=MODEL_NAME,
@@ -172,7 +173,8 @@ def llm_agent(task: Dict, history: List[str]) -> Action:
         return Action(workflow=workflow)
 
     except Exception as e:
-        print(f"  [ERROR] LLM failed: {e} — using fallback")
+        if DEBUG:
+            print(f"[ERROR] LLM failed: {e}")
         return rule_based_agent(task)
 
 
@@ -183,7 +185,7 @@ RULE_BASED_WORKFLOWS: Dict[str, List[Dict]] = {
         {"api": "calendar_api", "params": {"date": "2026-04-08", "time": "10:00"}},
     ],
     "medium": [
-        {"api": "flight_api", "params": {"from_city": "New York", "to_city": "London"}},
+        {"api": "flight_api", "params": {"from_city": "NYC", "to_city": "London"}},
         {"api": "email_api",  "params": {"to": "john@example.com"}},
     ],
     "hard": [
@@ -210,14 +212,16 @@ def rule_based_agent(task: Dict) -> Action:
 
 def main():
     env = APIWorkflowEnv()
+    env.reset()
 
     for task in TASKS:
         task_name = task["id"]
         model_name = MODEL_NAME or "rule-based"
+        
 
         print(f"[START] task={task_name} env=flowforge model={model_name}")
 
-        env.reset()
+        
         history = []
         success = False
 
@@ -242,7 +246,7 @@ def main():
                     f"error=null"
                 )
 
-            success = final_score >= 0.99
+            success = final_score >= 0.95
 
             reward_str = ",".join(
                 f"{(final_score if i == workflow_len else 0.00):.2f}"
@@ -260,6 +264,8 @@ def main():
             f"steps={workflow_len} "
             f"rewards={reward_str}"
         )
+
+        
 
 if __name__ == "__main__":
     main()

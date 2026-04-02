@@ -68,17 +68,12 @@ def _param_score(submitted: List[Dict], expected: List[Dict]) -> float:
     return correct_kv / total_expected_kv
 
 
-# ── FIXED FUNCTION ────────────────────────────────────────────────────────────
+# ── FUNCTION ────────────────────────────────────────────────────────────
 
 def grade(correct: List[Dict], workflow: List[Dict], dependencies: Optional[List[Tuple[str, str]]] = None) -> float:
-    """
-    FIXED: Now takes (correct_workflow, agent_workflow)
-    """
 
-    # ✅ FIX 1: remove task dependency
     expected: List[Dict] = correct
 
-    # ✅ FIX 2: remove task-based dependencies
     if dependencies is None:
         dependencies = []
 
@@ -178,5 +173,6 @@ def grade(correct: List[Dict], workflow: List[Dict], dependencies: Optional[List
         0.10 * score_params -
         total_penalty
     )
+
 
     return round(max(0.0, min(1.0, score)), 4)
