@@ -61,7 +61,7 @@ run_test("Wrong Params (EASY)", {
 
 run_test("Perfect MEDIUM", {
     "workflow": [
-        {"api": "flight_api", "params": {"from_city": "New York", "to_city": "London"}},
+        {"api": "flight_api", "params": {"from_city": "NYC", "to_city": "London"}},
         {"api": "email_api", "params": {"to": "john@example.com"}}
     ]
 }, task_index=1)
