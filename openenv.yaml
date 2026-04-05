@@ -1,0 +1,106 @@
+name: api-workflow-orchestration
+version: "1.0.0"
+description: >
+  A real-world OpenEnv environment where an agent must orchestrate API calls
+  to complete business workflows (meeting scheduling, flight booking,
+  and multi-step trip planning). The agent must choose correct APIs,
+  order them properly, and supply correct parameters.
+
+environment:
+  class: APIWorkflowEnv
+  module: environment
+
+modules:
+  - environment.py
+  - apis.py
+  - grader.py
+  - tasks.py
+
+action_space:
+  type: structured
+  description: Ordered list of API calls
+  schema:
+    workflow:
+      type: array
+      items:
+        type: object
+        required: [api, params]
+        properties:
+          api:
+            type: string
+            enum:
+              - flight_api
+              - calendar_api
+              - email_api
+              - database_api
+          params:
+            type: object
+
+observation_space:
+  type: structured
+  schema:
+    message:
+      type: string
+    task_description:
+      type: string
+    available_apis:
+      type: array
+      items:
+        type: string
+    step_count:
+      type: integer
+
+reward:
+  type: float
+  range: [0.0, 1.0]
+  description: >
+    Continuous score combining:
+      - API correctness (F1)
+      - Order correctness (LCS + dependency)
+      - API recall (correct APIs included)
+      - Parameter correctness
+    Execution failures incur additional penalty.
+
+state:
+  description: Internal execution state
+  fields:
+    flight_booked: bool
+    meeting_scheduled: bool
+    email_sent: bool
+    data_stored: bool
+    history: list
+
+tasks:
+  - id: easy
+    difficulty: easy
+    steps: 1
+    description: Schedule a meeting
+    apis: [calendar_api]
+
+  - id: medium
+    difficulty: medium
+    steps: 2
+    description: Book a flight and send confirmation email
+    apis: [flight_api, email_api]
+
+  - id: hard
+    difficulty: hard
+    steps: 4
+    description: Multi-step workflow (flight → calendar → database → email)
+    apis: [flight_api, calendar_api, database_api, email_api]
+
+episode:
+  num_tasks: 3
+  steps_per_task: 1
+  reset_on_done: true
+
+baseline_scores:
+  note: >
+    Deterministic rule-based fallback achieves perfect scores.
+    Actual LLM performance may vary.
+
+tags:
+  - openenv
+  - api-orchestration
+  - workflow
+  - deterministic
