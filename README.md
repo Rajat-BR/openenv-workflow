@@ -6,7 +6,7 @@ colorTo: purple
 sdk: docker
 app_port: 7860
 pinned: false
-short_description: Evaluate AI agents by executing and scoring multi-step API workflows.
+short_description: Evaluate AI agents via multi-step API workflows
 ---
 
 # FlowForge: Evaluating AI Agents in Real-World Workflows
