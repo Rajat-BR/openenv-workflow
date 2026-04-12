@@ -228,15 +228,42 @@ def main():
         success = False
 
         try:
-            action = llm_agent(task, history)
+            max_attempts = 3
+            best_action = None
+            best_score = -1.0
 
-            if not action.workflow:
-                if DEBUG:
-                    print("[WARN] Falling back to rule-based")
-                action = rule_based_agent(task)
+            for attempt in range(max_attempts):
 
-            _, reward, _, _ = env.step(action)
-            raw_score = round(reward.score, 2)
+                action = llm_agent(task, history)
+
+                if not action.workflow:
+                    if attempt == max_attempts - 1:
+                        action = rule_based_agent(task)
+                    else:
+                        continue
+
+                _, reward, _, _ = env.step(action)
+                score = reward.score
+
+                # track best
+                if score > best_score:
+                    best_score = score
+                    best_action = action
+
+                # early stop if good
+                if score >= 0.95:
+                    break
+
+                # feedback for next attempt
+                history.append(
+                    f"Previous workflow score={score}. "
+                    f"Fix missing steps, wrong order, or incorrect API usage."
+                )
+
+            # use best result
+            action = best_action
+            raw_score = round(best_score, 2)
+
             if raw_score <= 0.0:
                 final_score = 0.01
             elif raw_score >= 1.0:
