@@ -236,7 +236,13 @@ def main():
                 action = rule_based_agent(task)
 
             _, reward, _, _ = env.step(action)
-            final_score = round(reward.score, 2)
+            raw_score = round(reward.score, 2)
+            if raw_score <= 0.0:
+                final_score = 0.01
+            elif raw_score >= 1.0:
+                final_score = 0.99
+            else:
+                final_score = raw_score
 
             workflow_len = len(action.workflow)
 
